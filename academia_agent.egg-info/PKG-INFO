@@ -1,0 +1,132 @@
+Metadata-Version: 2.4
+Name: academia-agent
+Version: 0.1.0
+Summary: A self-correcting, multi-agent RAG assistant for higher education.
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+Requires-Dist: fastapi<1.0,>=0.110
+Requires-Dist: uvicorn[standard]<1.0,>=0.27
+Requires-Dist: python-multipart<1.0,>=0.0.9
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: httpx>=0.27; extra == "dev"
+Provides-Extra: documents
+Requires-Dist: pypdf>=4.0; extra == "documents"
+Requires-Dist: python-docx>=1.1; extra == "documents"
+
+# AcademiaAgent
+
+AcademiaAgent is a runnable, local-first prototype of an academic assistant built around **agentic, self-correcting RAG**. It gives students, faculty, and staff a source-grounded interface for policy questions, course support, literature-review guidance, and an advisory degree audit.
+
+The project intentionally runs without a cloud LLM API key, vector database, or embedding download. It uses your local **Ollama `gemma4:12b`** model for source-grounded answer synthesis and query rewriting, while retaining a deterministic citation-only fallback when Ollama is stopped or produces an invalid answer. The application boundaries are designed so that Qdrant, BGE-M3, and a cross-encoder can be introduced without changing the UI or API contracts.
+
+## Included workflow
+
+```text
+Question → Router agent → role-filtered hybrid retrieval → reranker
+         → relevance reflection → Gemma query rewrite (bounded to 3 attempts)
+         → Gemma citation-bound answer / deterministic safe fallback
+```
+
+- **Interactive browser workspace** — chat, role picker, live agent trace, citations, source browser, restricted file upload, and degree-audit preview.
+- **Specialist routing** — policy, pedagogy, research, and integrity routes.
+- **Hybrid retrieval** — local semantic-token cosine + BM25-like lexical scoring; exact policy/course-code queries use a lexical-heavy blend.
+- **Corrective RAG** — low-confidence retrieval triggers deterministic query expansion and a capped re-retrieval loop.
+- **Local Gemma synthesis** — `gemma4:12b` writes clearer answers using only retrieved local context. It must cite valid supplied sources or its answer is rejected.
+- **Grounding guardrail** — responses only surface source-cited claims. Unverified queries receive a clear non-answer instead of fabricated information.
+- **Academic-integrity guardrail** — direct assessed-work requests are redirected to hints, learning support, and practice.
+- **Role-aware access** — every source has an allowed-role list; retrieval filters before ranking. Only faculty, staff, and administrators may add shared knowledge-base sources.
+- **Persistent safe ingestion** — local `.md`, `.txt`, `.pdf`, and `.docx` uploads (PDF/DOCX extraction is optional) are size-capped, stored under `data/uploads`, and restored after the application restarts.
+
+## Quick start
+
+Requires Python 3.9+ locally (the deployment container uses Python 3.12).
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e '.[dev,documents]'
+uvicorn app.main:app --reload
+```
+
+Open [http://localhost:8000](http://localhost:8000). The API reference is available at [http://localhost:8000/docs](http://localhost:8000/docs).
+
+To run without PDF/DOCX extraction support, use `pip install -e '.[dev]'`; text and Markdown ingestion continue to work.
+
+### Local Ollama / Gemma
+
+AcademiaAgent is configured by default to call the locally installed model tag detected on this machine:
+
+```bash
+ollama serve                 # only needed if Ollama is not already running
+ollama run gemma4:12b        # verifies the model is available
+```
+
+No source content is sent to a cloud provider: the app calls `http://127.0.0.1:11434/api/generate`. Gemma receives only the user question and retrieved role-authorized source excerpts. The adapter disables Gemma’s private reasoning channel so it reserves the response budget for the user-facing, cited answer. It is explicitly told to treat source text as quoted evidence rather than instructions, to use no outside knowledge, and to cite every factual claim with a source number. Outputs without valid citations are discarded in favour of the project’s deterministic fallback.
+
+These settings are available as environment variables:
+
+```bash
+export ACADEMIA_OLLAMA_ENABLED=true
+export ACADEMIA_OLLAMA_MODEL=gemma4:12b
+export ACADEMIA_OLLAMA_BASE_URL=http://127.0.0.1:11434
+export ACADEMIA_OLLAMA_TIMEOUT_SECONDS=120
+```
+
+Set `ACADEMIA_OLLAMA_ENABLED=false` to run the original deterministic citation-only mode. This is also the automatic fallback whenever Ollama is unavailable, times out, or returns an answer with absent/invalid citations.
+
+### Docker
+
+```bash
+docker compose up --build
+```
+
+The optional Qdrant service is declared under the `production-retrieval` profile:
+
+```bash
+docker compose --profile production-retrieval up --build
+```
+
+The current prototype does not automatically switch to Qdrant when the profile starts. It is included as the deployment boundary for the production adapter.
+
+## Example requests
+
+```bash
+curl -X POST http://localhost:8000/api/query \
+  -H 'content-type: application/json' \
+  -d '{"query":"Can I take CS401 if I completed CS201 and MATH202?", "role":"student"}'
+
+curl -X POST http://localhost:8000/api/degree-audit \
+  -H 'content-type: application/json' \
+  -d '{"completed_courses":["CS201","MATH202"],"earned_credits":90,"cumulative_gpa":3.1}'
+```
+
+## Project layout
+
+```text
+app/
+  agents.py       Router, integrity guardrail, corrective loop, answer reflection
+  corpus.py       Source metadata, parent-child chunks, role filtering
+  retrieval.py    Hybrid lexical/semantic retrieval and reranking interface
+  ingestion.py    Restricted upload, persistent manifest, and document restoration
+  main.py         FastAPI routes and degree-audit endpoint
+data/seed/        Sample handbook, course catalogue, study, and research sources
+static/           Interactive responsive web client
+tests/            Workflow and safety regression tests
+```
+
+## Production integration map
+
+| Prototype boundary | Production replacement |
+| --- | --- |
+| `AcademicCorpus` | Qdrant collection with metadata payload filters |
+| Local token cosine | BGE-M3 dense/sparse embeddings |
+| `_rerank` | BGE cross-encoder reranker |
+| `OllamaClient` | Local Gemma 4 12B grounded generation and query transformation |
+| `_most_relevant_sentences` | Citation-only fallback if local generation is unavailable or invalid |
+| local upload parser | Unstructured/Marker/OCR ingestion workers |
+| in-memory session | PostgreSQL chat/audit store + Redis cache |
+
+## Important limitations
+
+This is a demonstrator, not an official academic-record system. The degree audit uses a small, explicit sample rule set and is deliberately marked advisory. Before production use, connect it to the approved catalogue/degree-audit system; add institution-specific authentication, encrypted audit logs, retention policies, FERPA review, real RBAC claims, and evaluation data.

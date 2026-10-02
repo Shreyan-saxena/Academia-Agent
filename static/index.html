@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#FDF6E3" />
+    <title>AcademiaAgent — Grounded Academic Support</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
+    <main class="shell">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="AcademiaAgent home"><span class="brand-mark">A</span><span>academia<span>agent</span></span></a>
+        <div class="system-status"><span class="status-dot"></span><span id="health-label">Knowledge base loading</span></div>
+        <button class="outline-button" id="open-upload" type="button">+ Add material</button>
+      </header>
+
+      <section class="workspace">
+        <aside class="sidebar">
+          <div class="sidebar-label">Workspace</div>
+          <button class="nav-item active" type="button" data-panel="chat"><span>✦</span> Academic assistant</button>
+          <button class="nav-item" type="button" data-panel="audit"><span>⌁</span> Degree audit</button>
+          <button class="nav-item" type="button" data-panel="library"><span>▤</span> Knowledge base</button>
+          <div class="sidebar-divider"></div>
+          <div class="sidebar-label">Session settings</div>
+          <label class="role-label" for="role-select">Your access role</label>
+          <select id="role-select" class="role-select">
+            <option value="student">Student</option>
+            <option value="faculty">Faculty</option>
+            <option value="staff">Staff</option>
+            <option value="administrator">Administrator</option>
+          </select>
+          <p class="privacy-note">Role-aware retrieval keeps restricted sources out of the chat context.</p>
+        </aside>
+
+        <section class="main-panel">
+          <div id="chat-panel" class="panel active">
+            <div class="panel-heading">
+              <div><p class="eyebrow">Multi-agent academic support</p><h1>What are you working through?</h1><p>Answers are grounded in your institution’s approved material, with a visible retrieval trail.</p></div>
+              <div class="agent-badge"><span class="pulse"></span> Gemma 4 · local RAG</div>
+            </div>
+            <div id="conversation" class="conversation" aria-live="polite">
+              <article class="message assistant-message welcome-message">
+                <div class="avatar">A</div>
+                <div class="message-body"><p>Hi — I can explain concepts, find policies, check course prerequisites, or help structure a literature review. I’ll show the source material behind every answer.</p></div>
+              </article>
+            </div>
+            <div class="quick-prompts" aria-label="Example prompts">
+              <button type="button" data-prompt="Can I take CS401 if I completed CS201 and MATH202?">Check CS401 eligibility</button>
+              <button type="button" data-prompt="What does academic probation mean?">Explain academic probation</button>
+              <button type="button" data-prompt="Help me make a study plan for a difficult topic">Build a study plan</button>
+              <button type="button" data-prompt="How should I evaluate papers for a literature review?">Plan a literature review</button>
+            </div>
+            <form id="query-form" class="composer">
+              <label class="sr-only" for="query-input">Ask AcademiaAgent</label>
+              <textarea id="query-input" rows="2" maxlength="4000" placeholder="Ask about a course, policy, concept, or research topic…"></textarea>
+              <div class="composer-footer"><span><kbd>⌘</kbd><kbd>Enter</kbd> to send</span><button class="send-button" type="submit"><span>Ask agent</span><span>↑</span></button></div>
+            </form>
+          </div>
+
+          <div id="audit-panel" class="panel">
+            <div class="panel-heading compact"><div><p class="eyebrow">Policy agent</p><h1>Degree-audit preview</h1><p>A transparent advisory check against the sample academic handbook.</p></div></div>
+            <form id="audit-form" class="audit-card">
+              <label>Completed course codes <input id="courses-input" placeholder="CS201, MATH202" /></label>
+              <div class="two-col"><label>Earned credits <input id="credits-input" type="number" min="0" max="300" step="0.5" value="90" required /></label><label>Cumulative GPA <input id="gpa-input" type="number" min="0" max="4" step="0.01" value="3.1" required /></label></div>
+              <button class="send-button audit-submit" type="submit">Run advisory audit <span>→</span></button>
+            </form>
+            <div id="audit-result" class="audit-result empty-state">Enter your progress to see requirements, eligibility, and source-backed guidance.</div>
+          </div>
+
+          <div id="library-panel" class="panel">
+            <div class="panel-heading compact"><div><p class="eyebrow">Institutional sources</p><h1>Knowledge base</h1><p>Documents are chunked with parent context and filtered by your current role.</p><p id="upload-permission-note" class="upload-permission-note"></p></div><button class="outline-button" id="library-upload" type="button">+ Add material</button></div>
+            <div id="document-list" class="document-list"><div class="empty-state">Loading documents…</div></div>
+          </div>
+        </section>
+
+        <aside class="trace-panel">
+          <div class="trace-heading"><div><p class="eyebrow">Agent observability</p><h2>Retrieval trace</h2></div><span id="trace-state" class="trace-state">Ready</span></div>
+          <ol id="trace-steps" class="trace-steps">
+            <li><span class="step-index">01</span><div><strong>Route</strong><small>Waiting for a question</small></div></li>
+            <li><span class="step-index">02</span><div><strong>Hybrid retrieval</strong><small>Dense + lexical search</small></div></li>
+            <li><span class="step-index">03</span><div><strong>Reflection</strong><small>Grounding check</small></div></li>
+          </ol>
+          <div class="trace-divider"></div>
+          <div class="citation-heading"><span>Retrieved sources</span><span id="citation-count">0</span></div>
+          <div id="citation-list" class="citation-list"><p class="muted">Citations from your answer will appear here.</p></div>
+          <div class="guardrail-card"><span>◈</span><p><strong>Integrity guardrail on</strong>Assessment requests get learning support, not submission-ready answers.</p></div>
+        </aside>
+      </section>
+    </main>
+
+    <dialog id="upload-dialog" class="upload-dialog">
+      <form id="upload-form" method="dialog">
+        <div class="dialog-heading"><div><p class="eyebrow">Ingestion pipeline</p><h2>Add academic material</h2></div><button class="icon-button" type="button" id="close-upload-dialog" aria-label="Close">×</button></div>
+        <div id="uploader-role-info" class="uploader-role-info"></div>
+        <p>Upload a text, Markdown, PDF, or DOCX source. It is chunked with parent context and persisted in the knowledge base across reloads.</p>
+        <label class="file-drop" for="file-input"><input id="file-input" name="file" type="file" accept=".md,.txt,.pdf,.docx" required /><span id="file-drop-label">Choose a source file</span><small>Maximum 8 MB · Markdown, text, PDF, DOCX</small></label>
+        <label>Who may retrieve it?
+          <select id="upload-roles" multiple size="4"><option value="student" selected>Students</option><option value="faculty" selected>Faculty</option><option value="staff" selected>Staff</option><option value="administrator" selected>Administrators</option></select>
+        </label>
+        <div id="upload-feedback" class="upload-feedback"></div>
+        <button class="send-button dialog-submit" type="submit">Ingest source <span>↑</span></button>
+      </form>
+    </dialog>
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>

@@ -1,0 +1,2 @@
+"""AcademiaAgent application package."""
+

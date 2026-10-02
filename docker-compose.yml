@@ -1,0 +1,20 @@
+services:
+  academia-agent:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - academia_uploads:/app/data/uploads
+    environment:
+      ACADEMIA_MAX_RETRIEVAL_LOOPS: "3"
+  qdrant:
+    image: qdrant/qdrant:v1.12.5
+    profiles: [production-retrieval]
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+volumes:
+  academia_uploads:
+  qdrant_data:
