@@ -232,8 +232,8 @@ The `AcademicCorpus` handles the "Heavy Lifting" of data management. It implemen
 ### Installation
 ```bash
 # 1. Clone and enter
-git clone https://github.com/your_handle/RAG-Codex
-cd RAG-Codex
+git clone https://github.com/Shreyan-saxena/Academia-Agent
+cd Academia-Agent
 
 # 2. Setup Environment
 python3 -m venv .venv
