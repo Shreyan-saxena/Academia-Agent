@@ -242,8 +242,8 @@ source .venv/bin/activate
 # 3. Install with document support
 pip install -e .[dev,documents]
 
-# 4. Run the API
-uvicorn app.main:app --reload
+# 4. Run the API (Keep this terminal open)
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ### Basic Usage
