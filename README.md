@@ -351,9 +351,6 @@ By employing a **Local-First** architecture, AcademiaAgent eliminates the most s
 2. **Detect**: Update `route_query` in `app/agents.py` with the keywords that should trigger this route.
 3. **Style**: Add a new "Opening" string to the `AcademicAgent.answer` method to set the tone for the response.
 
-### License
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-
 ---
 
 *Built with 🛠️ [Ollama](https://ollama.ai/), [FastAPI](https://fastapi.tiangolo.com/), and [Python](https://www.python.org/).*
