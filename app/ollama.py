@@ -24,32 +24,38 @@ class OllamaClient:
         self.timeout_seconds = timeout_seconds
         self.enabled = enabled
 
-    def _generate(self, system: str, prompt: str, temperature: float = 0.15, num_predict: int = 320) -> Optional[str]:
+    def _generate(self, system: str, prompt: str, images: Optional[list[str]] = None, temperature: float = 0.15, num_predict: int = 320) -> Optional[str]:
         if not self.enabled:
             return None
-        body = json.dumps({
+        body = {
             "model": self.model,
             "system": system,
             "prompt": prompt,
             "stream": False,
-            # Gemma 4 otherwise spends the token budget in its private
-            # reasoning channel and can return an empty public response.
             "think": False,
             "options": {"temperature": temperature, "num_predict": num_predict},
-        }).encode("utf-8")
-        request = Request(
-            f"{self.base_url}/api/generate",
-            data=body,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
+        }
+        if images:
+            body["images"] = images
+
         try:
+            request = Request(
+                f"{self.base_url}/api/generate",
+                data=json.dumps(body).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
             with urlopen(request, timeout=self.timeout_seconds) as response:
                 payload = json.loads(response.read().decode("utf-8"))
         except (HTTPError, URLError, OSError, TimeoutError, ValueError):
             return None
         answer = payload.get("response")
         return answer.strip() if isinstance(answer, str) and answer.strip() else None
+
+    def generate_multimodal(self, system: str, prompt: str, images: list[str]) -> Optional[str]:
+        """Generate text based on visual and textual prompts."""
+        return self._generate(system=system, prompt=prompt, images=images)
+
 
     def rewrite_query(self, query: str) -> Optional[str]:
         """Return a concise academic-database query, or ``None`` on model failure."""
