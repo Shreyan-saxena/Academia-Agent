@@ -34,7 +34,7 @@ agent = AcademicAgent(retriever, settings.max_retrieval_loops, ollama=ollama)
 async def lifespan(_: FastAPI):
     corpus.load_seed_directory(settings.seed_dir)
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
-    for document in load_persisted_documents(settings.upload_dir):
+    for document in load_persisted_documents(settings.upload_dir, client=ollama):
         corpus.add(document)
     yield
 
@@ -83,7 +83,7 @@ async def upload_document(
             allowed_roles.append(UserRole(role.strip()))
         except ValueError as error:
             raise HTTPException(422, f"Unknown role: {role}") from error
-    document = await ingest_upload(file, settings.upload_dir, allowed_roles)
+    document = await ingest_upload(file, settings.upload_dir, allowed_roles, client=ollama)
     persist_uploaded_document(document, settings.upload_dir)
     corpus.add(document)
     return {"id": document.id, "title": document.title, "message": "Document ingested and available for retrieval."}
