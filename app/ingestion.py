@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import re
+from typing import Optional
 from threading import RLock
 from uuid import uuid4
 
@@ -11,6 +12,8 @@ from fastapi import HTTPException, UploadFile
 
 from .corpus import AcademicDocument
 from .schemas import UserRole
+from .ollama import OllamaClient
+from .vision_ingestion import process_syllabus_with_vision
 
 SUPPORTED_SUFFIXES = {".txt", ".md", ".pdf", ".docx"}
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024
@@ -62,7 +65,7 @@ def persist_uploaded_document(document: AcademicDocument, upload_dir: Path) -> N
         temporary_path.replace(path)
 
 
-def load_persisted_documents(upload_dir: Path) -> list[AcademicDocument]:
+def load_persisted_documents(upload_dir: Path, client: Optional[OllamaClient] = None) -> list[AcademicDocument]:
     """Restore valid persisted uploads, syncing with files on disk so uploads survive any restart or reload."""
     upload_dir.mkdir(parents=True, exist_ok=True)
     restored: list[AcademicDocument] = []
@@ -81,7 +84,10 @@ def load_persisted_documents(upload_dir: Path) -> list[AcademicDocument]:
             source = record.get("source")
             text = record.get("text")
             raw_roles = record.get("allowed_roles")
-            if not all(isinstance(value, str) and value.strip() for value in (identifier, title, source, text)):
+            if not (isinstance(identifier, str) and identifier.strip() and
+                    isinstance(title, str) and title.strip() and
+                    isinstance(source, str) and source.strip() and
+                    isinstance(text, str) and text.strip()):
                 continue
             roles: list[UserRole] = []
             for raw_role in raw_roles if isinstance(raw_roles, list) else []:
@@ -115,11 +121,17 @@ def load_persisted_documents(upload_dir: Path) -> list[AcademicDocument]:
             if source_tag in seen_sources:
                 continue
             try:
-                raw_bytes = disk_file.read_bytes()
-                if not raw_bytes or len(raw_bytes) > MAX_UPLOAD_BYTES:
-                    continue
-                extracted = re.sub(r"\n{3,}", "\n\n", _extract_text(raw_bytes, disk_file.suffix.lower())).strip()
-                if len(extracted) < 25 or extracted in seen_texts:
+                suffix = disk_file.suffix.lower()
+                if suffix == ".pdf" and client:
+                    extracted = process_syllabus_with_vision(disk_file, client)
+                else:
+                    raw_bytes = disk_file.read_bytes()
+                    if not raw_bytes or len(raw_bytes) > MAX_UPLOAD_BYTES:
+                        continue
+                    extracted = _extract_text(raw_bytes, suffix)
+
+                extracted_text = re.sub(r"\n{3,}", "\n\n", extracted).strip() if extracted else ""
+                if not extracted_text or len(extracted_text) < 25 or extracted_text in seen_texts:
                     continue
 
                 clean_stem = re.sub(r"-[a-f0-9]{8,}$", "", disk_file.stem)
@@ -131,17 +143,17 @@ def load_persisted_documents(upload_dir: Path) -> list[AcademicDocument]:
                     id=doc_id,
                     title=title,
                     source=source_tag,
-                    text=extracted,
+                    text=extracted_text,
                     allowed_roles=tuple(UserRole),
                 )
                 seen_sources.add(source_tag)
-                seen_texts.add(extracted)
+                seen_texts.add(extracted_text)
                 restored.append(new_doc)
                 records_to_persist.append({
                     "id": new_doc.id,
                     "title": new_doc.title,
                     "source": new_doc.source,
-                    "text": new_doc.text,
+                    "text": extracted_text,
                     "allowed_roles": [r.value for r in new_doc.allowed_roles],
                 })
                 manifest_updated = True
@@ -161,6 +173,7 @@ def _extract_text(data: bytes, suffix: str) -> str:
     if suffix in {".txt", ".md"}:
         return data.decode("utf-8", errors="replace")
     if suffix == ".pdf":
+        # Fallback to pypdf if vision is not used
         try:
             from pypdf import PdfReader
             from io import BytesIO
@@ -177,7 +190,7 @@ def _extract_text(data: bytes, suffix: str) -> str:
     raise HTTPException(415, "Supported formats are .md, .txt, .pdf, and .docx.")
 
 
-async def ingest_upload(upload: UploadFile, upload_dir: Path, roles: list[UserRole]) -> AcademicDocument:
+async def ingest_upload(upload: UploadFile, upload_dir: Path, roles: list[UserRole], client: Optional[OllamaClient] = None) -> AcademicDocument:
     suffix = Path(upload.filename or "document.txt").suffix.lower()
     if suffix not in SUPPORTED_SUFFIXES:
         raise HTTPException(415, "Supported formats are .md, .txt, .pdf, and .docx.")
@@ -186,14 +199,22 @@ async def ingest_upload(upload: UploadFile, upload_dir: Path, roles: list[UserRo
         raise HTTPException(400, "The upload is empty.")
     if len(data) > MAX_UPLOAD_BYTES:
         raise HTTPException(413, "Uploads are limited to 8 MB in this starter deployment.")
-    text = re.sub(r"\n{3,}", "\n\n", _extract_text(data, suffix)).strip()
-    if len(text) < 25:
-        raise HTTPException(422, "No usable text could be extracted from this document.")
+
     upload_dir.mkdir(parents=True, exist_ok=True)
     safe_stem = re.sub(r"[^a-zA-Z0-9_-]+", "-", Path(upload.filename or "document").stem).strip("-") or "document"
     stored_name = f"{safe_stem}-{uuid4().hex[:8]}{suffix}"
-    # Persist the original only after validating it; files stay inside configured storage.
-    (upload_dir / stored_name).write_bytes(data)
+    stored_path = upload_dir / stored_name
+    stored_path.write_bytes(data)
+
+    if suffix == ".pdf" and client:
+        extracted = process_syllabus_with_vision(stored_path, client)
+    else:
+        extracted = _extract_text(data, suffix)
+
+    text = re.sub(r"\n{3,}", "\n\n", extracted).strip() if extracted else ""
+    if len(text) < 25:
+        raise HTTPException(422, "No usable text could be extracted from this document.")
+
     title = safe_stem.replace("-", " ").replace("_", " ").title()
     return AcademicDocument(
         id=f"upload_{uuid4().hex[:12]}",
@@ -202,3 +223,4 @@ async def ingest_upload(upload: UploadFile, upload_dir: Path, roles: list[UserRo
         text=text,
         allowed_roles=tuple(roles or list(UserRole)),
     )
+    
