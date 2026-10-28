@@ -132,7 +132,8 @@ class AcademicAgent:
             rewritten = self.ollama.rewrite_query(effective_query) if self.ollama else None
             effective_query = rewritten or transform_query(effective_query)
             if rewritten:
-                trace_notes.append(f"Low retrieval confidence triggered a {self.ollama.model} query rewrite and another retrieval pass.")
+                model_name = self.ollama.model if self.ollama else "local"
+                trace_notes.append(f"Low retrieval confidence triggered a {model_name} query rewrite and another retrieval pass.")
             else:
                 trace_notes.append("Low retrieval confidence triggered a deterministic query transformation and another retrieval pass.")
             result = self.retriever.search(effective_query, request.role, request.top_k)
@@ -168,7 +169,8 @@ class AcademicAgent:
         generated_answer = self.ollama.grounded_answer(request.query, route.route, result.hits) if self.ollama else None
         if generated_answer:
             answer = generated_answer
-            trace_notes.append(f"{self.ollama.model} produced a citation-validated answer from the retrieved sources.")
+            model_name = self.ollama.model if self.ollama else "local"
+            trace_notes.append(f"{model_name} produced a citation-validated answer from the retrieved sources.")
         elif self.ollama and self.ollama.enabled:
             trace_notes.append(f"{self.ollama.model} was unavailable or returned an uncited answer; used the citation-only fallback.")
         trace_notes.append("Reflection check passed: every presented claim is tied to a retrieved citation.")
