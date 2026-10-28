@@ -85,7 +85,8 @@ AcademiaAgent is structured as a modular pipeline where each stage is inspectabl
 - **`app/agents.py`**: The **Cognitive Layer**. This is the "Brain" of the system. It implements the agentic loop, deciding when to rewrite queries, when to trigger guardrails, and how to compose the final grounded response.
 - **`app/retrieval.py`**: The **Search Engine**. This is where the hybrid retrieval logic resides. It coordinates between the dense (cosine) and sparse (BM25) search methods.
 - **`app/corpus.py`**: The **Knowledge Base**. This module manages the "physical" state of the data—how it is chunked, stored in memory, and filtered by role.
-- **`app/ingestion.py`**: The **Data Pipeline**. This is the entry point for new knowledge. It handles the complexities of parsing PDFs and Markdown files into a format the retriever can understand.
+- **`app/vision_ingestion.py`**: The **Visual Parser**. Implements the rasterization and multimodal transcription logic to convert visual PDFs into structured Markdown.
+- **`app/ingestion.py`**: The **Data Pipeline**. Coordinates the parsing of PDFs (via the Vision pipeline) and Markdown files into the corpus.
 - **`app/ollama.py`**: The **LLM Interface**. A specialized wrapper that configures the local model for two distinct tasks: *Query Rewriting* (creative/expansive) and *Grounded Generation* (strict/restrictive).
 
 ### Data Flow Diagram
@@ -98,8 +99,16 @@ AcademiaAgent is structured as a modular pipeline where each stage is inspectabl
 ### Data Ingestion & Corpus Management
 Knowledge is only as good as its representation. AcademiaAgent avoids "naive chunking" (splitting every 500 characters), which often cuts a policy rule in half.
 
-#### Structural Parsing
-The ingestion pipeline identifies headers (`#`, `##`) and list markers. It attempts to keep "logical units" together. If a section is titled "Graduation Requirements," the system ensures that the requirements list remains a single chunk, preserving the relationship between the header and the bullet points.
+#### Vision-First Ingestion Pipeline
+To handle the inherent complexity of academic documents (e.g., syllabus grids, course articulation matrices, and scanned PDFs), AcademiaAgent employs a **Vision-First Ingestion Pipeline**. 
+
+Instead of relying on traditional text extraction, which often fails on tables and layout-heavy pages, the system follows a visual preprocessing flow:
+1. **Page Rasterization**: PDF pages are converted into high-resolution images using `PyMuPDF`.
+2. **Vision-First Transcription**: These images are passed to a multimodal LLM (via Ollama) with a specialized structural prompt.
+3. **Structured Markdown Output**: The model transcribes the visual layout into clean Markdown, preserving tables, matrices, and hierarchical headings.
+4. **Semantic Chunking**: The resulting structured Markdown is then fed into the standard RAG ingestion pipeline.
+
+This approach ensures that the relationship between data in complex tables—which are common in academic syllabi—is preserved and searchable.
 
 #### Role-Based Metadata
 Every chunk is assigned a `role_access` level. 
@@ -204,7 +213,7 @@ RBAC is integrated at the **Corpus Level**, not the API level. This means that e
 | **API** | FastAPI | Asynchronous request handling for low-latency RAG. |
 | **LLM** | Ollama / Gemma 4 | High-reasoning local model that fits on consumer GPUs. |
 | **Search** | Hybrid (BM25 + Cosine) | Bridges the gap between conceptual search and literal precision. |
-| **Parsing** | PyPDF2 / Markdown | Handles the most common academic document formats. |
+| **Parsing** | PyMuPDF + Vision LLM / Markdown | Handles scanned PDFs and complex layouts (tables/matrices) via visual transcription. |
 | **Container** | Docker | Ensures "one-click" deployment across different university servers. |
 
 ---
@@ -219,6 +228,9 @@ The `HybridRetriever` class is designed to be "Adapter-ready." While it currentl
 
 ### The Knowledge Base (`corpus.py`)
 The `AcademicCorpus` handles the "Heavy Lifting" of data management. It implements the `chunks_for(role)` method, which performs the RBAC filtering. It also manages the mapping between `chunk_id` and `document_id`, allowing the system to provide full document titles and section headers in the final citations.
+
+### The Visual Parser (`vision_ingestion.py`)
+The `process_syllabus_with_vision` function implements the multimodal bridge. It manages the lifecycle of temporary page images and coordinates with the `OllamaClient` to transform pixels into structured academic Markdown. By utilizing a vision-capable model, the system can "see" the layout of a syllabus, ensuring that Course Articulation Matrices—which are traditionally impossible to parse with text-based tools—are preserved as valid Markdown tables.
 
 ---
 
@@ -326,7 +338,7 @@ By employing a **Local-First** architecture, AcademiaAgent eliminates the most s
 
 **Issue: The AI says it cannot find any relevant information, but I know the document is there.**
 - **Check Role**: Ensure you are querying with the correct role (e.g., if the document is tagged "Faculty," a "Student" role query will not find it).
-- **Check Formatting**: Ensure the PDF is not a "scanned image" PDF. The system requires selectable text. If you have a scanned PDF, please run it through an OCR tool first.
+- **Check Formatting**: The system uses a vision-first pipeline to handle both selectable text and scanned images, so formatting is rarely an issue. If a document is missing, check the Role permissions first.
 - **Tuning**: Try reducing the `alpha` parameter in `retrieval.py` to prioritize keyword matching.
 
 **Issue: The responses are too long or too short.**
