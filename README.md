@@ -367,7 +367,6 @@ By employing a **Local-First** architecture, AcademiaAgent eliminates the most s
 
 📄 License
 Open source - use freely for academic and educational purposes.
-
 ---
 
 *Built with 🛠️ [Ollama](https://ollama.ai/), [FastAPI](https://fastapi.tiangolo.com/), and [Python](https://www.python.org/).*
